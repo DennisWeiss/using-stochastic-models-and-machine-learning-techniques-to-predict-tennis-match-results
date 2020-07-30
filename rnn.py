@@ -136,6 +136,7 @@ def load_data(number_of_past_games, features='without_age'):
 
     X1 = np.zeros((atp.shape[0], number_of_past_games, size_per_match))
     X2 = np.zeros((atp.shape[0], number_of_past_games, size_per_match))
+    X3 = np.zeros((atp.shape[0], 4)) if features == 'with_age_and_surface' else None
     y = np.zeros(atp.shape[0])
 
     for i in range(atp.shape[0]):
@@ -180,6 +181,9 @@ def load_data(number_of_past_games, features='without_age'):
         result = result_value(parse_score(match['score']))
         y[i] = result if winner_first else 1 - result
 
+        if features == 'with_age_and_surface':
+            X3[i, get_surface_index(match['surface'])] = 1
+
         user_past_games1.append({
             'result': result,
             'opponent_rating': rating(str(match['loser_id'])),
@@ -203,7 +207,7 @@ def load_data(number_of_past_games, features='without_age'):
         fill_missing_values(X1 if winner_first else X2, i, number_last_games1)
         fill_missing_values(X2 if winner_first else X1, i, number_last_games2)
 
-    return X1, X2, y
+    return X1, X2, X3, y
 
 
 def winner_prediction_accuracy(y_true, y_pred):
@@ -213,6 +217,15 @@ def winner_prediction_accuracy(y_true, y_pred):
 def mean_absolute_error(y_true, y_pred):
     return tf.multiply(tf.constant(2, dtype=tf.float32), tf.abs(tf.subtract(y_true, y_pred)))
 
+
+def split_X_data(X1, X2, X3, features, start, end):
+    if features == 'with_age_and_surface':
+        return [X1[start:end, :, :], X2[start:end, :, :], X3[start:end, :]]
+    return [X1[start:end, :, :], X2[start:end, :, :]]
+
+
+def split_y_data(y, start, end):
+    return y[start:end]
 
 def rnn_model_with_features(features='without_age'):
     def rnn_model(n_past_games, learning_rate, embedding_dimension, n_hidden_layers, perceptron_count_factor,
@@ -226,7 +239,7 @@ def rnn_model_with_features(features='without_age'):
         if features == 'with_age_and_surface':
             size_per_match = 8
 
-        def run_model(X1, X2, y, best_history=None):
+        def run_model(X1, X2, X3, y, best_history=None):
             data_size = X1.shape[0]
             training_data_size = int(0.8 * data_size)
             cross_validation_data_size = int(0.1 * data_size)
@@ -251,7 +264,7 @@ def rnn_model_with_features(features='without_age'):
 
             output = keras.layers.Dense(1, activation='sigmoid')(prev_layer)
 
-            model = keras.models.Model([player_1_history, player_2_history], output)
+            model = keras.models.Model([player_1_history, player_2_history, surface_input] if features == 'with_age_and_surface' else [player_1_history, player_2_history], output)
 
             model.compile(loss='mean_squared_error', metrics=[winner_prediction_accuracy, mean_absolute_error], optimizer=keras.optimizers.Adam(learning_rate))
 
@@ -262,12 +275,12 @@ def rnn_model_with_features(features='without_age'):
 
             for i in range(20):
                 model_history = model.fit(
-                    [X1[0:training_data_size, :, :], X2[0:training_data_size, :, :]],
-                    y[0:training_data_size],
+                    split_X_data(X1, X2, X3, features, 0, training_data_size),
+                    split_y_data(y, 0, training_data_size),
                     epochs=1,
                     validation_data=(
-                        [X1[training_data_size:(training_data_size + cross_validation_data_size), :, :], X2[training_data_size:(training_data_size + cross_validation_data_size), :, :]],
-                        y[training_data_size:(training_data_size + cross_validation_data_size)]
+                        split_X_data(X1, X2, X3, features, training_data_size, training_data_size + cross_validation_data_size),
+                        split_y_data(y, training_data_size, training_data_size + cross_validation_data_size)
                     ),
                     batch_size=2 ** batch_size_exponent
                 )
@@ -286,20 +299,19 @@ def rnn_model_with_features(features='without_age'):
 def main():
     features = 'without_age'
 
-    n_past_games = 40
+    n_past_games = 44
 
-    X1, X2, y = load_data(n_past_games, features=features)
+    X1, X2, X3, y = load_data(n_past_games, features=features)
 
     data_size = X1.shape[0]
     training_data_size = int(0.8 * data_size)
     cross_validation_data_size = int(0.1 * data_size)
 
-    model, history, training_history = rnn_model_with_features(features=features)(n_past_games, 0.001, 30, 2, 0.6, 0.7, 6, 'sigmoid', 'relu')(X1, X2, y)
+    model, history, training_history = rnn_model_with_features(features=features)(n_past_games, 0.007410368572461942, 17, 2, 0.7953793275757787, 0.08109940784249844, 12, 'relu', 'tanh')(X1, X2, X3, y)
 
     model.evaluate(
-        [X1[(training_data_size + cross_validation_data_size):data_size, :, :],
-         X2[(training_data_size + cross_validation_data_size):data_size, :, :]],
-        y[(training_data_size + cross_validation_data_size):data_size]
+        split_X_data(X1, X2, X3, features, training_data_size + cross_validation_data_size, data_size),
+        split_y_data(y, training_data_size + cross_validation_data_size, data_size)
     )
 
 
@@ -319,15 +331,15 @@ def get_random_hyper_parameters(hyper_parameters):
     return tuple(random_hyper_parameters)
 
 
-def random_search(model, hyper_parameters):
+def random_search(model, hyper_parameters, features='without_age'):
     best_hyper_parameters = None
     best_cross_validation_loss = float('inf')
     best_history = None
     for i in range(10):
         current_hyper_parameters = get_random_hyper_parameters(hyper_parameters)
         print('hyperparameters: ' + str(current_hyper_parameters))
-        X1, X2, y = load_data(current_hyper_parameters[0])
-        keras_model, history, training_history = model(*current_hyper_parameters)(X1, X2, y, best_history)
+        X1, X2, X3, y = load_data(current_hyper_parameters[0], features=features)
+        keras_model, history, training_history = model(*current_hyper_parameters)(X1, X2, X3, y, best_history)
         current_cross_validation_loss = history[len(history) - 1]
         print('current cross validation loss: ' + str(current_cross_validation_loss))
         if current_cross_validation_loss < best_cross_validation_loss:
@@ -338,17 +350,18 @@ def random_search(model, hyper_parameters):
 
 
 def do_hyper_parameter_optimization():
-    print(random_search(rnn_model_with_features(features='without_age'), [
+    features = 'without_age'
+    print(random_search(rnn_model_with_features(features=features), [
         {'type': 'int', 'from': 1, 'to': 50},
         {'type': 'float', 'from': 0.0001, 'to': 0.01},
         {'type': 'int', 'from': 1, 'to': 30},
-        {'type': 'int', 'from': 1, 'to': 6},
+        {'type': 'int', 'from': 1, 'to': 3},
         {'type': 'float', 'from': 0.01, 'to': 1},
         {'type': 'float', 'from': 0.01, 'to': 1},
-        {'type': 'int', 'from': 0, 'to': 15},
+        {'type': 'int', 'from': 4, 'to': 15},
         {'type': 'set', 'values': ['sigmoid', 'tanh', 'relu']},
         {'type': 'set', 'values': ['sigmoid', 'tanh', 'relu']}
-    ]))
+    ], features=features))
 
 
 main()

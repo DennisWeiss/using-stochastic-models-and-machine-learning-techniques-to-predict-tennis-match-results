@@ -306,12 +306,12 @@ def random_search(model, hyper_parameters, features='without_age'):
 
 
 def main(print_training_history=False):
-    features = 'with_age_and_surface'
+    features = 'with_age'
 
-    n_past_games = 40
+    n_past_games = 28
 
     X, y = load_data(n_past_games, features=features)
-    model, history, training_history = ffnn_model_with_features(features=features)(n_past_games, 0.007897418982429077, 6, 0.32939023905442244, 0.45843088268411825, 7, 'sigmoid')(X, y)
+    model, history, training_history = ffnn_model_with_features(features=features)(n_past_games, 0.006074825087988612, 2, 0.7122483963763908, 0.3915590614104496, 6, 'relu')(X, y)
 
     if print_training_history:
         plot_x = list(range(1, 10 + 1))
