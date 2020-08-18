@@ -5,6 +5,7 @@ import numpy as np
 import re
 import tensorflow as tf
 from tensorflow import keras
+import matplotlib.pyplot as plt
 
 
 def parse_score(score_string):
@@ -227,6 +228,7 @@ def split_X_data(X1, X2, X3, features, start, end):
 def split_y_data(y, start, end):
     return y[start:end]
 
+
 def rnn_model_with_features(features='without_age'):
     def rnn_model(n_past_games, learning_rate, embedding_dimension, n_hidden_layers, perceptron_count_factor,
               hidden_layer_shrink_factor, batch_size_exponent, activation_function_rnn, activation_function_ffnn):
@@ -296,10 +298,10 @@ def rnn_model_with_features(features='without_age'):
     return rnn_model
 
 
-def main():
-    features = 'without_age'
+def main(print_training_history=False):
+    features = 'with_age'
 
-    n_past_games = 44
+    n_past_games = 34
 
     X1, X2, X3, y = load_data(n_past_games, features=features)
 
@@ -307,7 +309,19 @@ def main():
     training_data_size = int(0.8 * data_size)
     cross_validation_data_size = int(0.1 * data_size)
 
-    model, history, training_history = rnn_model_with_features(features=features)(n_past_games, 0.007410368572461942, 17, 2, 0.7953793275757787, 0.08109940784249844, 12, 'relu', 'tanh')(X1, X2, X3, y)
+    model, history, training_history = rnn_model_with_features(features=features)(n_past_games, 0.007231477705881956, 11, 1, 0.5668506172536623, 0.2445231254351173, 11, 'relu', 'relu')(X1, X2, X3, y)
+
+    if print_training_history:
+        plot_x = list(range(1, 20 + 1))
+
+        plt.plot(plot_x, training_history, label='training loss')
+        plt.plot(plot_x, history, label='test loss')
+
+        plt.xlabel('epochs')
+        plt.ylabel('MSE')
+
+        plt.legend()
+        plt.show()
 
     model.evaluate(
         split_X_data(X1, X2, X3, features, training_data_size + cross_validation_data_size, data_size),
@@ -350,7 +364,7 @@ def random_search(model, hyper_parameters, features='without_age'):
 
 
 def do_hyper_parameter_optimization():
-    features = 'without_age'
+    features = 'with_age'
     print(random_search(rnn_model_with_features(features=features), [
         {'type': 'int', 'from': 1, 'to': 50},
         {'type': 'float', 'from': 0.0001, 'to': 0.01},
@@ -364,5 +378,5 @@ def do_hyper_parameter_optimization():
     ], features=features))
 
 
-main()
+main(True)
 # do_hyper_parameter_optimization()

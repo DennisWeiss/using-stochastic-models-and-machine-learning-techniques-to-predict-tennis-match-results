@@ -308,10 +308,10 @@ def random_search(model, hyper_parameters, features='without_age'):
 def main(print_training_history=False):
     features = 'with_age'
 
-    n_past_games = 28
+    n_past_games = 32
 
     X, y = load_data(n_past_games, features=features)
-    model, history, training_history = ffnn_model_with_features(features=features)(n_past_games, 0.006074825087988612, 2, 0.7122483963763908, 0.3915590614104496, 6, 'relu')(X, y)
+    model, history, training_history = ffnn_model_with_features(features=features)(n_past_games, 0.008544899405772726, 2, 0.046727832302539, 0.7270628586602064, 4, 'relu')(X, y)
 
     if print_training_history:
         plot_x = list(range(1, 10 + 1))
@@ -348,6 +348,6 @@ def do_hyper_parameter_optimization():
     ], features=features))
 
 
-# main(True)
-do_hyper_parameter_optimization()
+main(True)
+# do_hyper_parameter_optimization()
 
